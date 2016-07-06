@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/miekg/coredns/middleware"
-	k8sc "github.com/miekg/coredns/middleware/kubernetes/k8sclient"
+	"github.com/miekg/coredns/middleware/kubernetes"
 	"github.com/miekg/coredns/middleware/kubernetes/msg"
 	"github.com/miekg/coredns/middleware/kubernetes/nametemplate"
 	"github.com/miekg/coredns/middleware/kubernetes/util"
@@ -17,12 +17,11 @@ import (
 )
 
 type Kubernetes struct {
-	Next  middleware.Handler
-	Zones []string
-	Proxy proxy.Proxy // Proxy for looking up names during the resolution process
-	Ctx   context.Context
-	//	Inflight   *singleflight.Group
-	APIConn      *k8sc.K8sConnector
+	Next         middleware.Handler
+	Zones        []string
+	Proxy        proxy.Proxy // Proxy for looking up names during the resolution process
+	Ctx          context.Context
+	APIConn      *kubernetes.Controller
 	NameTemplate *nametemplate.NameTemplate
 	Namespaces   *[]string
 }
