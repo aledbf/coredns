@@ -2,10 +2,9 @@ package kubernetes
 
 import (
 	"fmt"
+	"log"
 	"sync"
 	"time"
-
-	"github.com/golang/glog"
 
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/client/cache"
@@ -122,7 +121,7 @@ func (dns *dnsController) Stop() error {
 	if !dns.shutdown {
 
 		close(dns.stopCh)
-		glog.Infof("shutting down controller queues")
+		log.Println("shutting down controller queues")
 		dns.shutdown = true
 
 		return nil
@@ -133,14 +132,14 @@ func (dns *dnsController) Stop() error {
 
 // Run starts the controller.
 func (dns *dnsController) Run() {
-	glog.Infof("starting coredns controller")
+	log.Println("starting coredns controller")
 
 	go dns.podController.Run(dns.stopCh)
 	go dns.endpController.Run(dns.stopCh)
 	go dns.svcController.Run(dns.stopCh)
 
 	<-dns.stopCh
-	glog.Infof("shutting down coredns controller")
+	log.Println("shutting down coredns controller")
 }
 
 func (c *dnsController) GetNamespaceList() *api.NamespaceList {
