@@ -17,10 +17,7 @@ const (
 // Kubernetes sets up the kubernetes middleware.
 func Kubernetes(c *Controller) (middleware.Middleware, error) {
 	fmt.Println("controller %v", c)
-	// TODO: Determine if subzone support required
-
 	kubernetes, err := kubernetesParse(c)
-
 	if err != nil {
 		return nil, err
 	}
@@ -49,13 +46,13 @@ func kubernetesParse(c *Controller) (kubernetes.Kubernetes, error) {
 
 			middleware.Zones(k8s.Zones).FullyQualify()
 			if c.NextBlock() {
-				switch c.Val() {
+				/*switch c.Val() {
 				case "endpoint":
-					/*args := c.RemainingArgs()
+					args := c.RemainingArgs()
 					if len(args) == 0 {
 						return kubernetes.Kubernetes{}, c.ArgErr()
-					}*/
-				}
+					}
+				}*/
 				for c.Next() {
 					switch c.Val() {
 					case "template":
