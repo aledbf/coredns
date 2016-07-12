@@ -4,26 +4,41 @@ package kubernetes
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/miekg/coredns/middleware"
-	"github.com/miekg/coredns/middleware/kubernetes"
 	"github.com/miekg/coredns/middleware/kubernetes/msg"
 	"github.com/miekg/coredns/middleware/kubernetes/nametemplate"
 	"github.com/miekg/coredns/middleware/kubernetes/util"
 	"github.com/miekg/coredns/middleware/proxy"
+	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/client/unversioned"
 
 	"github.com/miekg/dns"
-	"golang.org/x/net/context"
+)
+
+const (
+	resyncPeriod = 30 * time.Second
 )
 
 type Kubernetes struct {
 	Next         middleware.Handler
 	Zones        []string
 	Proxy        proxy.Proxy // Proxy for looking up names during the resolution process
-	Ctx          context.Context
-	APIConn      *kubernetes.Controller
+	APIConn      *dnsController
 	NameTemplate *nametemplate.NameTemplate
 	Namespaces   *[]string
+}
+
+func NewK8sConnector() Kubernetes {
+	kubeClient, err := unversioned.NewInCluster()
+	if err != nil {
+		// ("failed to create client: %v", err)
+	}
+
+	return Kubernetes{
+		APIConn: newdnsController(kubeClient, resyncPeriod),
+	}
 }
 
 // getZoneForName returns the zone string that matches the name and a
@@ -99,10 +114,10 @@ func (g Kubernetes) Records(name string, exact bool) ([]msg.Service, error) {
 		return nil, nil
 	}
 
-	k8sItem := g.APIConn.GetServiceItemInNamespace(namespace, serviceName)
+	k8sItem := g.APIConn.GetServiceInNamespace(namespace, serviceName)
 	fmt.Println("[debug] k8s item:", k8sItem)
 
-	// TODO: Update GetServiceItemInNamespace to produce a list of ServiceItems. (Stepping stone to wildcard support)
+	// TODO: Update GetServiceInNamespace to produce a list of Service. (Stepping stone to wildcard support)
 
 	if k8sItem == nil {
 		// Did not find item in k8s
@@ -112,16 +127,16 @@ func (g Kubernetes) Records(name string, exact bool) ([]msg.Service, error) {
 	test := g.NameTemplate.GetRecordNameFromNameValues(nametemplate.NameValues{ServiceName: serviceName, TypeName: typeName, Namespace: namespace, Zone: zone})
 	fmt.Printf("[debug] got recordname %v\n", test)
 
-	records := g.getRecordsForServiceItems([]*k8sc.ServiceItem{k8sItem}, name)
+	records := g.getRecordsForService([]*api.Service{k8sItem}, name)
 
 	return records, nil
 }
 
 // TODO: assemble name from parts found in k8s data based on name template rather than reusing query string
-func (g Kubernetes) getRecordsForServiceItems(serviceItems []*k8sc.ServiceItem, name string) []msg.Service {
+func (g Kubernetes) getRecordsForService(services []*api.Service, name string) []msg.Service {
 	var records []msg.Service
 
-	for _, item := range serviceItems {
+	for _, item := range services {
 		fmt.Println("[debug] clusterIP:", item.Spec.ClusterIP)
 		for _, p := range item.Spec.Ports {
 			fmt.Println("[debug]    port:", p.Port)
@@ -132,12 +147,12 @@ func (g Kubernetes) getRecordsForServiceItems(serviceItems []*k8sc.ServiceItem, 
 		s := msg.Service{Host: name}
 		records = append(records, s)
 		for _, p := range item.Spec.Ports {
-			s := msg.Service{Host: clusterIP, Port: p.Port}
+			s := msg.Service{Host: clusterIP, Port: int(p.Port)}
 			records = append(records, s)
 		}
 	}
 
-	fmt.Printf("[debug] records from getRecordsForServiceItems(): %v\n", records)
+	fmt.Printf("[debug] records from getRecordsForService(): %v\n", records)
 	return records
 }
 

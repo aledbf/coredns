@@ -8,13 +8,9 @@ import (
 	"github.com/miekg/coredns/middleware/kubernetes"
 	k8sc "github.com/miekg/coredns/middleware/kubernetes"
 	"github.com/miekg/coredns/middleware/kubernetes/nametemplate"
-	"github.com/miekg/coredns/middleware/proxy"
-
-	"golang.org/x/net/context"
 )
 
 const (
-	defaultK8sEndpoint  = "http://localhost:8080"
 	defaultNameTemplate = "${service}.${namespace}.${zone}"
 )
 
@@ -36,30 +32,9 @@ func Kubernetes(c *Controller) (middleware.Middleware, error) {
 }
 
 func kubernetesParse(c *Controller) (kubernetes.Kubernetes, error) {
-
-	/*
-	 * TODO: Remove unused state and simplify.
-	 * Inflight and Ctx might not be needed. Leaving in place until
-	 * we take a pass at API caching and optimizing connector to the
-	 * k8s API. Single flight (or limited upper-bound) for inflight
-	 * API calls may be desirable.
-	 */
-
-	k8s := kubernetes.Kubernetes{
-		Proxy:        proxy.New([]string{}),
-		Ctx:          context.Background(),
-		APIConn:      nil,
-		NameTemplate: nil,
-		Namespaces:   nil,
-	}
-	var (
-		endpoints  = []string{defaultK8sEndpoint}
-		template   = defaultNameTemplate
-		namespaces = []string{}
-	)
-
+	k8s := k8sc.NewK8sConnector()
 	k8s.NameTemplate = new(nametemplate.NameTemplate)
-	k8s.NameTemplate.SetTemplate(template)
+	k8s.NameTemplate.SetTemplate(defaultNameTemplate)
 
 	for c.Next() {
 		if c.Val() == "kubernetes" {
@@ -74,39 +49,30 @@ func kubernetesParse(c *Controller) (kubernetes.Kubernetes, error) {
 
 			middleware.Zones(k8s.Zones).FullyQualify()
 			if c.NextBlock() {
-				// TODO(miek): 2 switches?
 				switch c.Val() {
 				case "endpoint":
-					args := c.RemainingArgs()
+					/*args := c.RemainingArgs()
 					if len(args) == 0 {
 						return kubernetes.Kubernetes{}, c.ArgErr()
-					}
-					endpoints = args
-					k8s.APIConn = k8sc.NewK8sConnector(endpoints[0])
-					fmt.Printf("[debug] Got k8s API connector: %v\n", k8s.APIConn)
+					}*/
 				}
 				for c.Next() {
 					switch c.Val() {
 					case "template":
 						args := c.RemainingArgs()
-						if len(args) == 0 {
-							return kubernetes.Kubernetes{}, c.ArgErr()
-						}
-						template = strings.Join(args, "")
-						err := k8s.NameTemplate.SetTemplate(template)
-						if err != nil {
-							return kubernetes.Kubernetes{}, err
+						if len(args) != 0 {
+							template := strings.Join(args, "")
+							k8s.NameTemplate.SetTemplate(template)
 						}
 					case "namespaces":
 						args := c.RemainingArgs()
-						if len(args) == 0 {
-							return kubernetes.Kubernetes{}, c.ArgErr()
+						if len(args) != 0 {
+							k8s.Namespaces = &args
 						}
-						namespaces = args
-						k8s.Namespaces = &namespaces
 					}
 				}
 			}
+
 			return k8s, nil
 		}
 	}

@@ -2,17 +2,16 @@ package kubernetes
 
 import (
 	"fmt"
-	"reflect"
 	"sync"
 	"time"
 
 	"github.com/golang/glog"
 
 	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/apis/extensions"
 	"k8s.io/kubernetes/pkg/client/cache"
 	client "k8s.io/kubernetes/pkg/client/unversioned"
 	"k8s.io/kubernetes/pkg/controller/framework"
+	"k8s.io/kubernetes/pkg/fields"
 	"k8s.io/kubernetes/pkg/runtime"
 	"k8s.io/kubernetes/pkg/watch"
 )
@@ -25,8 +24,6 @@ var (
 type dnsController struct {
 	client *client.Client
 
-	domain string
-
 	podController  *framework.Controller
 	endpController *framework.Controller
 	svcController  *framework.Controller
@@ -34,8 +31,6 @@ type dnsController struct {
 	podLister  cache.StoreToPodLister
 	svcLister  cache.StoreToServiceLister
 	endpLister cache.StoreToEndpointsLister
-
-	backend backend
 
 	// stopLock is used to enforce only a single call to Stop is active.
 	// Needed because we allow stopping through an http endpoint and
@@ -46,82 +41,35 @@ type dnsController struct {
 }
 
 // newDNSController creates a controller for coredns
-func newdnsController(domain string, kubeClient *client.Client, resyncPeriod time.Duration) (*dnsController, error) {
+func newdnsController(kubeClient *client.Client, resyncPeriod time.Duration) *dnsController {
 	dns := dnsController{
 		client: kubeClient,
-		domain: domain,
 		stopCh: make(chan struct{}),
 	}
 
-	bend, err := newDNSServer(domain)
-	if err != nil {
-		return nil, err
-	}
-
-	dns.backend = bend
-
-	podEventHandler := framework.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			dns.handlePodCreate(obj)
-		},
-		DeleteFunc: func(obj interface{}) {
-			dns.handlePodDelete(obj)
-		},
-		UpdateFunc: func(old, cur interface{}) {
-			if !reflect.DeepEqual(old, cur) {
-				dns.handlePodUpdate(old, cur)
-			}
-		},
-	}
-
-	endpHandler := framework.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			dns.handleEndpointAdd(obj)
-		},
-		DeleteFunc: func(obj interface{}) {
-			//dns.syncQueue.enqueue(obj)
-		},
-		UpdateFunc: func(old, cur interface{}) {
-			if !reflect.DeepEqual(old, cur) {
-				//dns.syncQueue.enqueue(cur)
-			}
-		},
-	}
-
-	svcHandler := framework.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			dns.handleServiceCreate(obj)
-		},
-		DeleteFunc: func(obj interface{}) {
-			dns.handleServiceRemove(obj)
-		},
-		UpdateFunc: func(old, cur interface{}) {
-			dns.handleServiceUpdate(old, cur)
-		},
-	}
-
-	dns.podLister.Store, dns.podController = framework.NewInformer(
-		&cache.ListWatch{
-			ListFunc:  podsListFunc(dns.client, namespace),
-			WatchFunc: podsWatchFunc(dns.client, namespace),
-		},
-		&extensions.Ingress{}, resyncPeriod, podEventHandler)
+	dns.podLister.Indexer, dns.podController = framework.NewIndexerInformer(
+		cache.NewListWatchFromClient(dns.client, "pods", namespace, fields.Everything()),
+		&api.Pod{},
+		resyncPeriod,
+		framework.ResourceEventHandlerFuncs{},
+		cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc},
+	)
 
 	dns.endpLister.Store, dns.endpController = framework.NewInformer(
 		&cache.ListWatch{
 			ListFunc:  endpointsListFunc(dns.client, namespace),
 			WatchFunc: endpointsWatchFunc(dns.client, namespace),
 		},
-		&api.Endpoints{}, resyncPeriod, endpHandler)
+		&api.Endpoints{}, resyncPeriod, framework.ResourceEventHandlerFuncs{})
 
 	dns.svcLister.Store, dns.svcController = framework.NewInformer(
 		&cache.ListWatch{
 			ListFunc:  serviceListFunc(dns.client, namespace),
 			WatchFunc: serviceWatchFunc(dns.client, namespace),
 		},
-		&api.Service{}, resyncPeriod, svcHandler)
+		&api.Service{}, resyncPeriod, framework.ResourceEventHandlerFuncs{})
 
-	return &dns, nil
+	return &dns
 }
 
 func podsListFunc(c *client.Client, ns string) func(api.ListOptions) (runtime.Object, error) {
@@ -191,8 +139,38 @@ func (dns *dnsController) Run() {
 	go dns.endpController.Run(dns.stopCh)
 	go dns.svcController.Run(dns.stopCh)
 
-	go dns.backend.Start()
-
 	<-dns.stopCh
 	glog.Infof("shutting down coredns controller")
+}
+
+func (c *dnsController) GetNamespaceList() *api.NamespaceList {
+	return nil
+}
+
+func (c *dnsController) GetServiceList() *api.ServiceList {
+	return nil
+}
+
+// GetServicesByNamespace returns a map of
+// namespacename :: [ kubernetesService ]
+func (c *dnsController) GetServicesByNamespace() map[string][]api.Service {
+	items := make(map[string][]api.Service)
+	k8sServiceList := c.GetServiceList()
+	if k8sServiceList == nil {
+		return nil
+	}
+
+	for _, i := range k8sServiceList.Items {
+		namespace := i.Namespace
+		items[namespace] = append(items[namespace], i)
+	}
+
+	return items
+}
+
+// GetServiceInNamespace returns the Service that matches
+// servicename in the namespace
+func (c *dnsController) GetServiceInNamespace(namespace string, servicename string) *api.Service {
+	// No matching item found in namespace
+	return nil
 }
