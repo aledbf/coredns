@@ -71,18 +71,12 @@ func (g Kubernetes) getZoneForName(name string) (string, []string) {
 // this name. This is used when find matches when completing SRV lookups
 // for instance.
 func (g Kubernetes) Records(name string, exact bool) ([]msg.Service, error) {
-	fmt.Printf("enter Records('%v','%v')", name, exact)
-	zone, serviceSegments := g.getZoneForName(name)
+	_, serviceSegments := g.getZoneForName(name)
 
 	namespace := g.NameTemplate.GetNamespaceFromSegmentArray(serviceSegments)
 	serviceName := g.NameTemplate.GetServiceFromSegmentArray(serviceSegments)
-	typeName := g.NameTemplate.GetTypeFromSegmentArray(serviceSegments)
-
-	fmt.Println("[debug] exact: ", exact)
-	fmt.Println("[debug] zone: ", zone)
-	fmt.Println("[debug] servicename: ", serviceName)
-	fmt.Println("[debug] namespace: ", namespace)
-	fmt.Println("[debug] typeName: ", typeName)
+	//typeName := g.NameTemplate.GetTypeFromSegmentArray(serviceSegments)
+	// fmt.Println("[debug] typeName: ", typeName)
 
 	// TODO: Implement wildcard support to allow blank namespace value
 	if namespace == "" {
@@ -104,11 +98,7 @@ func (g Kubernetes) Records(name string, exact bool) ([]msg.Service, error) {
 		return nil, nil
 	}
 
-	test := g.NameTemplate.GetRecordNameFromNameValues(nametemplate.NameValues{ServiceName: serviceName, TypeName: typeName, Namespace: namespace, Zone: zone})
-	fmt.Printf("[debug] got recordname %v\n", test)
-
 	records := g.getRecordsForService([]*api.Service{k8sItem}, name)
-
 	return records, nil
 }
 
@@ -117,11 +107,6 @@ func (g Kubernetes) getRecordsForService(services []*api.Service, name string) [
 	var records []msg.Service
 
 	for _, item := range services {
-		fmt.Println("[debug] clusterIP:", item.Spec.ClusterIP)
-		for _, p := range item.Spec.Ports {
-			fmt.Printf("[debug]\tport:%v\n", p.Port)
-		}
-
 		clusterIP := item.Spec.ClusterIP
 
 		s := msg.Service{Host: name}
@@ -132,7 +117,6 @@ func (g Kubernetes) getRecordsForService(services []*api.Service, name string) [
 		}
 	}
 
-	fmt.Printf("[debug] records from getRecordsForService(): %v\n", records)
 	return records
 }
 

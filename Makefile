@@ -9,7 +9,7 @@ all:
 
 .PHONY: docker
 docker:
-	GOOS=linux go build -a -tags netgo -installsuffix netgo
+	CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo
 	docker build -t $$USER/coredns .
 
 .PHONY: deps
