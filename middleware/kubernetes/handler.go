@@ -50,7 +50,7 @@ func (k Kubernetes) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.M
 	case "SRV":
 		records, extra, err = k.SRV(zone, state)
 	case "PTR":
-		records, extra, err = k.PTR(zone, state)
+		records, err = k.PTR(zone, state)
 	case "SOA":
 		records = []dns.RR{k.SOA(zone, state)}
 	case "NS":

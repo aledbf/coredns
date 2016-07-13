@@ -131,7 +131,6 @@ func (dns *dnsController) Stop() error {
 func (dns *dnsController) Run() {
 	log.Println("starting coredns controller")
 
-	go dns.podController.Run(dns.stopCh)
 	go dns.endpController.Run(dns.stopCh)
 	go dns.svcController.Run(dns.stopCh)
 	go dns.nsController.Run(dns.stopCh)
