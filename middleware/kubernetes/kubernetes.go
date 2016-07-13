@@ -36,9 +36,12 @@ func NewK8sConnector() Kubernetes {
 		// ("failed to create client: %v", err)
 	}
 
-	return Kubernetes{
+	k8s := Kubernetes{
 		APIConn: newdnsController(kubeClient, resyncPeriod),
 	}
+
+	go k8s.APIConn.Run()
+	return k8s
 }
 
 // getZoneForName returns the zone string that matches the name and a
@@ -74,7 +77,7 @@ func (g Kubernetes) Records(name string, exact bool) ([]msg.Service, error) {
 		typeName    string
 	)
 
-	fmt.Println("enter Records('", name, "', ", exact, ")")
+	fmt.Printf("enter Records('%v','%v')", name, exact)
 	zone, serviceSegments := g.getZoneForName(name)
 
 	/*
@@ -100,7 +103,6 @@ func (g Kubernetes) Records(name string, exact bool) ([]msg.Service, error) {
 	fmt.Println("[debug] servicename: ", serviceName)
 	fmt.Println("[debug] namespace: ", namespace)
 	fmt.Println("[debug] typeName: ", typeName)
-	fmt.Println("[debug] APIconn: ", g.APIConn)
 
 	// TODO: Implement wildcard support to allow blank namespace value
 	if namespace == "" {
@@ -115,10 +117,8 @@ func (g Kubernetes) Records(name string, exact bool) ([]msg.Service, error) {
 	}
 
 	k8sItem := g.APIConn.GetServiceInNamespace(namespace, serviceName)
-	fmt.Println("[debug] k8s item:", k8sItem)
 
 	// TODO: Update GetServiceInNamespace to produce a list of Service. (Stepping stone to wildcard support)
-
 	if k8sItem == nil {
 		// Did not find item in k8s
 		return nil, nil
@@ -139,7 +139,7 @@ func (g Kubernetes) getRecordsForService(services []*api.Service, name string) [
 	for _, item := range services {
 		fmt.Println("[debug] clusterIP:", item.Spec.ClusterIP)
 		for _, p := range item.Spec.Ports {
-			fmt.Println("[debug]    port:", p.Port)
+			fmt.Printf("[debug]\tport:%v\n", p.Port)
 		}
 
 		clusterIP := item.Spec.ClusterIP

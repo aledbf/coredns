@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/miekg/coredns/middleware/kubernetes/util"
+
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/client/cache"
 	client "k8s.io/kubernetes/pkg/client/unversioned"
@@ -26,10 +28,12 @@ type dnsController struct {
 	podController  *framework.Controller
 	endpController *framework.Controller
 	svcController  *framework.Controller
+	nsController   *framework.Controller
 
 	podLister  cache.StoreToPodLister
 	svcLister  cache.StoreToServiceLister
 	endpLister cache.StoreToEndpointsLister
+	nsLister   util.StoreToNamespaceLister
 
 	// stopLock is used to enforce only a single call to Stop is active.
 	// Needed because we allow stopping through an http endpoint and
@@ -67,6 +71,13 @@ func newdnsController(kubeClient *client.Client, resyncPeriod time.Duration) *dn
 			WatchFunc: serviceWatchFunc(dns.client, namespace),
 		},
 		&api.Service{}, resyncPeriod, framework.ResourceEventHandlerFuncs{})
+
+	dns.nsLister.Store, dns.nsController = framework.NewInformer(
+		&cache.ListWatch{
+			ListFunc:  namespaceListFunc(dns.client),
+			WatchFunc: namespaceWatchFunc(dns.client),
+		},
+		&api.Namespace{}, resyncPeriod, framework.ResourceEventHandlerFuncs{})
 
 	return &dns
 }
@@ -107,6 +118,18 @@ func endpointsWatchFunc(c *client.Client, ns string) func(options api.ListOption
 	}
 }
 
+func namespaceListFunc(c *client.Client) func(api.ListOptions) (runtime.Object, error) {
+	return func(opts api.ListOptions) (runtime.Object, error) {
+		return c.Namespaces().List(opts)
+	}
+}
+
+func namespaceWatchFunc(c *client.Client) func(options api.ListOptions) (watch.Interface, error) {
+	return func(options api.ListOptions) (watch.Interface, error) {
+		return c.Namespaces().Watch(options)
+	}
+}
+
 func (dns *dnsController) controllersInSync() bool {
 	return dns.podController.HasSynced() && dns.svcController.HasSynced() && dns.endpController.HasSynced()
 }
@@ -137,17 +160,28 @@ func (dns *dnsController) Run() {
 	go dns.podController.Run(dns.stopCh)
 	go dns.endpController.Run(dns.stopCh)
 	go dns.svcController.Run(dns.stopCh)
+	go dns.nsController.Run(dns.stopCh)
 
 	<-dns.stopCh
 	log.Println("shutting down coredns controller")
 }
 
 func (c *dnsController) GetNamespaceList() *api.NamespaceList {
-	return nil
+	nsList, err := c.nsLister.List()
+	if err != nil {
+		return &api.NamespaceList{}
+	}
+
+	return &nsList
 }
 
 func (c *dnsController) GetServiceList() *api.ServiceList {
-	return nil
+	svcList, err := c.svcLister.List()
+	if err != nil {
+		return &api.ServiceList{}
+	}
+
+	return &svcList
 }
 
 // GetServicesByNamespace returns a map of
@@ -170,6 +204,18 @@ func (c *dnsController) GetServicesByNamespace() map[string][]api.Service {
 // GetServiceInNamespace returns the Service that matches
 // servicename in the namespace
 func (c *dnsController) GetServiceInNamespace(namespace string, servicename string) *api.Service {
-	// No matching item found in namespace
-	return nil
+	svcKey := fmt.Sprintf("%v/%v", namespace, servicename)
+	svcObj, svcExists, err := c.svcLister.Store.GetByKey(svcKey)
+
+	if err != nil {
+		log.Printf("error getting service %v from the cache: %v\n", svcKey, err)
+		return nil
+	}
+
+	if !svcExists {
+		log.Printf("service %v does not exists\n", svcKey)
+		return nil
+	}
+
+	return svcObj.(*api.Service)
 }

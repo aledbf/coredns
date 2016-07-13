@@ -21,8 +21,10 @@ func (k Kubernetes) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.M
 	// Check that query matches one of the zones served by this middleware,
 	// otherwise delegate to the next in the pipeline.
 	zone := middleware.Zones(k.Zones).Matches(state.Name())
+	fmt.Printf("[debug] zone: %v\n", zone)
 	if zone == "" {
 		if k.Next == nil {
+			fmt.Printf("[debug] returning error next is nil")
 			return dns.RcodeServerFailure, nil
 		}
 		return k.Next.ServeDNS(ctx, w, r)

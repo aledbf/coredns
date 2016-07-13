@@ -2,6 +2,7 @@ package setup
 
 import (
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/miekg/coredns/middleware"
@@ -36,13 +37,14 @@ func kubernetesParse(c *Controller) (kubernetes.Kubernetes, error) {
 	for c.Next() {
 		if c.Val() == "kubernetes" {
 			zones := c.RemainingArgs()
-
+			log.Printf("Zones: %v", zones)
 			if len(zones) == 0 {
 				k8s.Zones = c.ServerBlockHosts
 			} else {
 				// Normalize requested zones
 				k8s.Zones = kubernetes.NormalizeZoneList(zones)
 			}
+			k8s.Zones = []string{"cluster.local"}
 
 			middleware.Zones(k8s.Zones).FullyQualify()
 			if c.NextBlock() {
