@@ -71,32 +71,12 @@ func (g Kubernetes) getZoneForName(name string) (string, []string) {
 // this name. This is used when find matches when completing SRV lookups
 // for instance.
 func (g Kubernetes) Records(name string, exact bool) ([]msg.Service, error) {
-	var (
-		serviceName string
-		namespace   string
-		typeName    string
-	)
-
 	fmt.Printf("enter Records('%v','%v')", name, exact)
 	zone, serviceSegments := g.getZoneForName(name)
 
-	/*
-	   // For initial implementation, assume namespace is first serviceSegment
-	   // and service name is remaining segments.
-	   serviceSegLen := len(serviceSegments)
-	   if serviceSegLen >= 2 {
-	       namespace = serviceSegments[serviceSegLen-1]
-	       serviceName = strings.Join(serviceSegments[:serviceSegLen-1], ".")
-	   }
-	   // else we are looking up the zone. So handle the NS, SOA records etc.
-	*/
-
-	// TODO: Implementation above globbed together segments for the serviceName if
-	//       multiple segments remained. Determine how to do similar globbing using
-	//		 the template-based implementation.
-	namespace = g.NameTemplate.GetNamespaceFromSegmentArray(serviceSegments)
-	serviceName = g.NameTemplate.GetServiceFromSegmentArray(serviceSegments)
-	typeName = g.NameTemplate.GetTypeFromSegmentArray(serviceSegments)
+	namespace := g.NameTemplate.GetNamespaceFromSegmentArray(serviceSegments)
+	serviceName := g.NameTemplate.GetServiceFromSegmentArray(serviceSegments)
+	typeName := g.NameTemplate.GetTypeFromSegmentArray(serviceSegments)
 
 	fmt.Println("[debug] exact: ", exact)
 	fmt.Println("[debug] zone: ", zone)

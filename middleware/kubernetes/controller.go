@@ -18,7 +18,6 @@ import (
 )
 
 var (
-	keyFunc   = framework.DeletionHandlingMetaNamespaceKeyFunc
 	namespace = api.NamespaceAll
 )
 
@@ -82,18 +81,6 @@ func newdnsController(kubeClient *client.Client, resyncPeriod time.Duration) *dn
 	return &dns
 }
 
-func podsListFunc(c *client.Client, ns string) func(api.ListOptions) (runtime.Object, error) {
-	return func(opts api.ListOptions) (runtime.Object, error) {
-		return c.Pods(ns).List(opts)
-	}
-}
-
-func podsWatchFunc(c *client.Client, ns string) func(options api.ListOptions) (watch.Interface, error) {
-	return func(options api.ListOptions) (watch.Interface, error) {
-		return c.Pods(ns).Watch(options)
-	}
-}
-
 func serviceListFunc(c *client.Client, ns string) func(api.ListOptions) (runtime.Object, error) {
 	return func(opts api.ListOptions) (runtime.Object, error) {
 		return c.Services(ns).List(opts)
@@ -136,13 +123,11 @@ func (dns *dnsController) controllersInSync() bool {
 
 // Stop stops the  controller.
 func (dns *dnsController) Stop() error {
-	// Stop is invoked from the http endpoint.
 	dns.stopLock.Lock()
 	defer dns.stopLock.Unlock()
 
 	// Only try draining the workqueue if we haven't already.
 	if !dns.shutdown {
-
 		close(dns.stopCh)
 		log.Println("shutting down controller queues")
 		dns.shutdown = true
@@ -187,12 +172,12 @@ func (c *dnsController) GetServiceList() *api.ServiceList {
 // GetServicesByNamespace returns a map of
 // namespacename :: [ kubernetesService ]
 func (c *dnsController) GetServicesByNamespace() map[string][]api.Service {
-	items := make(map[string][]api.Service)
 	k8sServiceList := c.GetServiceList()
 	if k8sServiceList == nil {
 		return nil
 	}
 
+	items := make(map[string][]api.Service, len(k8sServiceList.Items))
 	for _, i := range k8sServiceList.Items {
 		namespace := i.Namespace
 		items[namespace] = append(items[namespace], i)

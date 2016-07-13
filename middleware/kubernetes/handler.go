@@ -10,9 +10,7 @@ import (
 )
 
 func (k Kubernetes) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) (int, error) {
-
 	fmt.Printf("[debug] here entering ServeDNS: ctx:%v dnsmsg:%v\n", ctx, r)
-
 	state := middleware.State{W: w, Req: r}
 	if state.QClass() != dns.ClassINET {
 		return dns.RcodeServerFailure, fmt.Errorf("can only deal with ClassINET")
@@ -24,7 +22,6 @@ func (k Kubernetes) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.M
 	fmt.Printf("[debug] zone: %v\n", zone)
 	if zone == "" {
 		if k.Next == nil {
-			fmt.Printf("[debug] returning error next is nil")
 			return dns.RcodeServerFailure, nil
 		}
 		return k.Next.ServeDNS(ctx, w, r)

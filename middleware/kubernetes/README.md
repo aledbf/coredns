@@ -1,10 +1,11 @@
 # kubernetes
 
 `kubernetes` enables reading zone data from a kubernetes cluster. Record names
-are constructed as "myservice.mynamespace.coredns.local" where:
+are constructed as "myservice.mynamespace.svc.coredns.local" where:
 
 * "myservice" is the name of the k8s service (this may include multiple DNS labels, such as "c1.myservice"),
-* "mynamespace" is the k8s namespace for the service, and
+* "mynamespace" is the k8s namespace for the service,
+* "svc" is a service, and
 * "coredns.local" is the zone configured for `kubernetes`.
 
 
@@ -19,11 +20,8 @@ kubernetes [zones...]
 
 ~~~
 kubernetes [zones] {
-    endpoint http://localhost:8080
 }
 ~~~
-
-* `endpoint` the kubernetes API endpoint, default to http://localhost:8080
 
 ## Examples
 
@@ -34,8 +32,6 @@ This is the default kubernetes setup, with everything specified in full:
 .:53 {
     # use kubernetes middleware for domain "coredns.local"
     kubernetes coredns.local {
-        # Use url for k8s API endpoint
-        endpoint http://localhost:8080
     }
 #    cache 160 coredns.local
 }
