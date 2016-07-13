@@ -83,10 +83,7 @@ func (t *NameTemplate) SetTemplate(s string) error {
 		if !elementPositionSet {
 			if strings.Contains(v, "${") {
 				err = errors.New("Record name template contains the unknown symbol '" + v + "'")
-				fmt.Printf("[debug] %v\n", err)
 				return err
-			} else {
-				fmt.Printf("[debug] Template string has static element '%v'\n", v)
 			}
 		}
 	}

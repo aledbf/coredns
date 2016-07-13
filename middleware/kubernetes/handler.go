@@ -10,7 +10,6 @@ import (
 )
 
 func (k Kubernetes) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) (int, error) {
-	fmt.Printf("[debug] here entering ServeDNS: ctx:%v dnsmsg:%v\n", ctx, r)
 	state := middleware.State{W: w, Req: r}
 	if state.QClass() != dns.ClassINET {
 		return dns.RcodeServerFailure, fmt.Errorf("can only deal with ClassINET")
@@ -19,7 +18,6 @@ func (k Kubernetes) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.M
 	// Check that query matches one of the zones served by this middleware,
 	// otherwise delegate to the next in the pipeline.
 	zone := middleware.Zones(k.Zones).Matches(state.Name())
-	fmt.Printf("[debug] zone: %v\n", zone)
 	if zone == "" {
 		if k.Next == nil {
 			return dns.RcodeServerFailure, nil
@@ -51,6 +49,8 @@ func (k Kubernetes) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.M
 		records, extra, err = k.MX(zone, state)
 	case "SRV":
 		records, extra, err = k.SRV(zone, state)
+	case "PTR":
+		records, extra, err = k.PTR(zone, state)
 	case "SOA":
 		records = []dns.RR{k.SOA(zone, state)}
 	case "NS":

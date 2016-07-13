@@ -12,7 +12,6 @@ import (
 	"k8s.io/kubernetes/pkg/client/cache"
 	client "k8s.io/kubernetes/pkg/client/unversioned"
 	"k8s.io/kubernetes/pkg/controller/framework"
-	"k8s.io/kubernetes/pkg/fields"
 	"k8s.io/kubernetes/pkg/runtime"
 	"k8s.io/kubernetes/pkg/watch"
 )
@@ -24,12 +23,10 @@ var (
 type dnsController struct {
 	client *client.Client
 
-	podController  *framework.Controller
 	endpController *framework.Controller
 	svcController  *framework.Controller
 	nsController   *framework.Controller
 
-	podLister  cache.StoreToPodLister
 	svcLister  cache.StoreToServiceLister
 	endpLister cache.StoreToEndpointsLister
 	nsLister   util.StoreToNamespaceLister
@@ -48,14 +45,6 @@ func newdnsController(kubeClient *client.Client, resyncPeriod time.Duration) *dn
 		client: kubeClient,
 		stopCh: make(chan struct{}),
 	}
-
-	dns.podLister.Indexer, dns.podController = framework.NewIndexerInformer(
-		cache.NewListWatchFromClient(dns.client, "pods", namespace, fields.Everything()),
-		&api.Pod{},
-		resyncPeriod,
-		framework.ResourceEventHandlerFuncs{},
-		cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc},
-	)
 
 	dns.endpLister.Store, dns.endpController = framework.NewInformer(
 		&cache.ListWatch{
@@ -118,7 +107,7 @@ func namespaceWatchFunc(c *client.Client) func(options api.ListOptions) (watch.I
 }
 
 func (dns *dnsController) controllersInSync() bool {
-	return dns.podController.HasSynced() && dns.svcController.HasSynced() && dns.endpController.HasSynced()
+	return dns.svcController.HasSynced() && dns.endpController.HasSynced()
 }
 
 // Stop stops the  controller.
@@ -151,8 +140,8 @@ func (dns *dnsController) Run() {
 	log.Println("shutting down coredns controller")
 }
 
-func (c *dnsController) GetNamespaceList() *api.NamespaceList {
-	nsList, err := c.nsLister.List()
+func (dns *dnsController) GetNamespaceList() *api.NamespaceList {
+	nsList, err := dns.nsLister.List()
 	if err != nil {
 		return &api.NamespaceList{}
 	}
@@ -160,8 +149,8 @@ func (c *dnsController) GetNamespaceList() *api.NamespaceList {
 	return &nsList
 }
 
-func (c *dnsController) GetServiceList() *api.ServiceList {
-	svcList, err := c.svcLister.List()
+func (dns *dnsController) GetServiceList() *api.ServiceList {
+	svcList, err := dns.svcLister.List()
 	if err != nil {
 		return &api.ServiceList{}
 	}
@@ -171,8 +160,8 @@ func (c *dnsController) GetServiceList() *api.ServiceList {
 
 // GetServicesByNamespace returns a map of
 // namespacename :: [ kubernetesService ]
-func (c *dnsController) GetServicesByNamespace() map[string][]api.Service {
-	k8sServiceList := c.GetServiceList()
+func (dns *dnsController) GetServicesByNamespace() map[string][]api.Service {
+	k8sServiceList := dns.GetServiceList()
 	if k8sServiceList == nil {
 		return nil
 	}
@@ -188,9 +177,9 @@ func (c *dnsController) GetServicesByNamespace() map[string][]api.Service {
 
 // GetServiceInNamespace returns the Service that matches
 // servicename in the namespace
-func (c *dnsController) GetServiceInNamespace(namespace string, servicename string) *api.Service {
+func (dns *dnsController) GetServiceInNamespace(namespace string, servicename string) *api.Service {
 	svcKey := fmt.Sprintf("%v/%v", namespace, servicename)
-	svcObj, svcExists, err := c.svcLister.Store.GetByKey(svcKey)
+	svcObj, svcExists, err := dns.svcLister.Store.GetByKey(svcKey)
 
 	if err != nil {
 		log.Printf("error getting service %v from the cache: %v\n", svcKey, err)
