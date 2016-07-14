@@ -292,7 +292,7 @@ func (k Kubernetes) SOA(zone string, state middleware.State) *dns.SOA {
 }
 
 func (k Kubernetes) PTR(zone string, state middleware.State) ([]dns.RR, error) {
-	reverseIP, ok := extractIP(state.QName())
+	reverseIP, ok := extractIP(state.Name())
 	if !ok {
 		return nil, fmt.Errorf("does not support reverse lookup for %s", state.QName())
 	}
@@ -305,12 +305,13 @@ func (k Kubernetes) PTR(zone string, state middleware.State) ([]dns.RR, error) {
 
 	for _, serv := range services {
 		ip := net.ParseIP(serv.Host)
-		if reverseIP != ip.To4().String() {
+		if reverseIP != serv.Host {
 			continue
 		}
 		switch {
 		case ip.To4() != nil:
 			records = append(records, serv.NewPTR(state.QName(), ip.To4().String()))
+			break
 		case ip.To4() == nil:
 			// nodata?
 		}

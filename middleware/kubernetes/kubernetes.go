@@ -4,12 +4,12 @@ package kubernetes
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/miekg/coredns/middleware"
 	"github.com/miekg/coredns/middleware/kubernetes/msg"
 	"github.com/miekg/coredns/middleware/kubernetes/nametemplate"
-	"github.com/miekg/coredns/middleware/kubernetes/util"
 	"github.com/miekg/coredns/middleware/proxy"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/client/unversioned"
@@ -71,12 +71,16 @@ func (g Kubernetes) getZoneForName(name string) (string, []string) {
 // this name. This is used when find matches when completing SRV lookups
 // for instance.
 func (g Kubernetes) Records(name string, exact bool) ([]msg.Service, error) {
+	if strings.HasSuffix(name, arpaSuffix) {
+		ip, _ := extractIP(name)
+		records := g.getServiceRecordForIP(ip, name)
+		return records, nil
+	}
+
 	_, serviceSegments := g.getZoneForName(name)
 
 	namespace := g.NameTemplate.GetNamespaceFromSegmentArray(serviceSegments)
 	serviceName := g.NameTemplate.GetServiceFromSegmentArray(serviceSegments)
-	//typeName := g.NameTemplate.GetTypeFromSegmentArray(serviceSegments)
-	// fmt.Println("[debug] typeName: ", typeName)
 
 	// TODO: Implement wildcard support to allow blank namespace value
 	if namespace == "" {
@@ -85,16 +89,9 @@ func (g Kubernetes) Records(name string, exact bool) ([]msg.Service, error) {
 		return nil, err
 	}
 
-	// Abort if the namespace is not published per CoreFile
-	if g.Namespaces != nil && !util.StringInSlice(namespace, *g.Namespaces) {
-		return nil, nil
-	}
-
 	k8sItem := g.APIConn.GetServiceInNamespace(namespace, serviceName)
-
 	// TODO: Update GetServiceInNamespace to produce a list of Service. (Stepping stone to wildcard support)
 	if k8sItem == nil {
-		// Did not find item in k8s
 		return nil, nil
 	}
 
@@ -118,6 +115,21 @@ func (g Kubernetes) getRecordsForService(services []*api.Service, name string) [
 	}
 
 	return records
+}
+
+func (g Kubernetes) getServiceRecordForIP(ip, name string) []msg.Service {
+	svcList, err := g.APIConn.svcLister.List()
+	if err != nil {
+		return nil
+	}
+
+	for _, service := range svcList.Items {
+		if service.Spec.ClusterIP == ip {
+			return []msg.Service{msg.Service{Host: ip}}
+		}
+	}
+
+	return nil
 }
 
 func (g Kubernetes) splitDNSName(name string) []string {
