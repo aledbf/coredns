@@ -4,18 +4,25 @@ package kubernetes
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/miekg/coredns/middleware"
-	k8sc "github.com/miekg/coredns/middleware/kubernetes/k8sclient"
 	"github.com/miekg/coredns/middleware/kubernetes/msg"
 	"github.com/miekg/coredns/middleware/kubernetes/nametemplate"
 	"github.com/miekg/coredns/middleware/kubernetes/util"
 	"github.com/miekg/coredns/middleware/proxy"
+	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/client/unversioned"
+
 	//	"github.com/miekg/coredns/middleware/singleflight"
 
 	"github.com/miekg/dns"
 	"golang.org/x/net/context"
+)
+
+const (
+	resyncPeriod = 5 * time.Minute
 )
 
 type Kubernetes struct {
@@ -24,9 +31,23 @@ type Kubernetes struct {
 	Proxy proxy.Proxy // Proxy for looking up names during the resolution process
 	Ctx   context.Context
 	//	Inflight   *singleflight.Group
-	APIConn      *k8sc.K8sConnector
+	APIConn      *dnsController
 	NameTemplate *nametemplate.NameTemplate
 	Namespaces   *[]string
+}
+
+func NewK8sConnector() Kubernetes {
+	kubeClient, err := unversioned.NewInCluster()
+	if err != nil {
+		// ("failed to create client: %v", err)
+	}
+
+	k8s := Kubernetes{
+		APIConn: newdnsController(kubeClient, resyncPeriod),
+	}
+
+	go k8s.APIConn.Run()
+	return k8s
 }
 
 // getZoneForName returns the zone string that matches the name and a
@@ -56,6 +77,14 @@ func (g Kubernetes) getZoneForName(name string) (string, []string) {
 // this name. This is used when find matches when completing SRV lookups
 // for instance.
 func (g Kubernetes) Records(name string, exact bool) ([]msg.Service, error) {
+	// TODO: refector this.
+	// Right now GetNamespaceFromSegmentArray do not supports PRE queries
+	if strings.HasSuffix(name, arpaSuffix) {
+		ip, _ := extractIP(name)
+		records := g.getServiceRecordForIP(ip, name)
+		return records, nil
+	}
+
 	var (
 		serviceName string
 		namespace   string
@@ -128,7 +157,7 @@ func (g Kubernetes) Records(name string, exact bool) ([]msg.Service, error) {
 }
 
 // TODO: assemble name from parts found in k8s data based on name template rather than reusing query string
-func (g Kubernetes) getRecordsForServiceItems(serviceItems []k8sc.ServiceItem, values nametemplate.NameValues) []msg.Service {
+func (g Kubernetes) getRecordsForServiceItems(serviceItems []api.Service, values nametemplate.NameValues) []msg.Service {
 	var records []msg.Service
 
 	for _, item := range serviceItems {
@@ -144,7 +173,7 @@ func (g Kubernetes) getRecordsForServiceItems(serviceItems []k8sc.ServiceItem, v
 		// Create records for each exposed port...
 		for _, p := range item.Spec.Ports {
 			fmt.Println("[debug]    port:", p.Port)
-			s := msg.Service{Host: clusterIP, Port: p.Port}
+			s := msg.Service{Host: clusterIP, Port: int(p.Port)}
 			records = append(records, s)
 		}
 	}
@@ -154,22 +183,16 @@ func (g Kubernetes) getRecordsForServiceItems(serviceItems []k8sc.ServiceItem, v
 }
 
 // Get performs the call to the Kubernetes http API.
-func (g Kubernetes) Get(namespace string, nsWildcard bool, servicename string, serviceWildcard bool) ([]k8sc.ServiceItem, error) {
-	serviceList, err := g.APIConn.GetServiceList()
+func (g Kubernetes) Get(namespace string, nsWildcard bool, servicename string, serviceWildcard bool) ([]api.Service, error) {
+	serviceList := g.APIConn.GetServiceList()
 
-	if err != nil {
-		fmt.Printf("[ERROR] Getting service list produced error: %v", err)
-		return nil, err
-	}
-
-	var resultItems []k8sc.ServiceItem
-
+	var resultItems []api.Service
 	for _, item := range serviceList.Items {
-		if symbolMatches(namespace, item.Metadata.Namespace, nsWildcard) && symbolMatches(servicename, item.Metadata.Name, serviceWildcard) {
+		if symbolMatches(namespace, item.Namespace, nsWildcard) && symbolMatches(servicename, item.Name, serviceWildcard) {
 			// If namespace has a wildcard, filter results against Corefile namespace list.
 			// (Namespaces without a wildcard were filtered before the call to this function.)
-			if nsWildcard && (g.Namespaces != nil && !util.StringInSlice(item.Metadata.Namespace, *g.Namespaces)) {
-				fmt.Printf("[debug] Namespace '%v' is not published by Corefile\n", item.Metadata.Namespace)
+			if nsWildcard && (g.Namespaces != nil && !util.StringInSlice(item.Namespace, *g.Namespaces)) {
+				fmt.Printf("[debug] Namespace '%v' is not published by Corefile\n", item.Namespace)
 				continue
 			}
 			resultItems = append(resultItems, item)
@@ -288,6 +311,21 @@ func (g Kubernetes) Ttl(node *etcdc.Node, serv *msg.Service) uint32 {
 // kubernetesNameError checks if the error is ErrorCodeKeyNotFound from kubernetes.
 func isKubernetesNameError(err error) bool {
 	return false
+}
+
+func (g Kubernetes) getServiceRecordForIP(ip, name string) []msg.Service {
+	svcList, err := g.APIConn.svcLister.List()
+	if err != nil {
+		return nil
+	}
+
+	for _, service := range svcList.Items {
+		if service.Spec.ClusterIP == ip {
+			return []msg.Service{msg.Service{Host: ip}}
+		}
+	}
+
+	return nil
 }
 
 const (
