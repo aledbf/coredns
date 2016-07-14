@@ -70,13 +70,13 @@ func (k Kubernetes) A(zone string, state middleware.State, previousRecords []dns
 				// We should already have found it
 				continue
 			}
-			m1, e1 := k.Proxy.Lookup(state, target, state.QType())
-			if e1 != nil {
+			mes, err := k.Proxy.Lookup(state, target, state.QType())
+			if err != nil {
 				continue
 			}
-			// Len(m1.Answer) > 0 here is well?
+			// Len(mes.Answer) > 0 here is well?
 			records = append(records, newRecord)
-			records = append(records, m1.Answer...)
+			records = append(records, mes.Answer...)
 			continue
 		case ip.To4() != nil:
 			records = append(records, serv.NewA(state.QName(), ip.To4()))
